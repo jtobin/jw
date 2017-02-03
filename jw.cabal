@@ -1,0 +1,30 @@
+name:                jw
+version:             0.1.0
+synopsis:            A simple writing tool.
+homepage:            https://github.com/jtobin/jw
+license:             GPL-3
+license-file:        LICENSE
+author:              Jared Tobin
+maintainer:          jared@jtobin.io
+category:            Text
+build-type:          Simple
+cabal-version:       >= 1.10
+description:
+  A simple writing tool.
+
+data-files:
+  etc/wc.vim
+  etc/commands.vim
+
+executable jw
+  main-is:             Main.hs
+  hs-source-dirs:      src
+  default-language:    Haskell2010
+  build-depends:
+      base
+    , directory
+    , filepath
+    , optparse-applicative
+    , process
+    , time
+
