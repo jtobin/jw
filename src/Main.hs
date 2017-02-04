@@ -5,10 +5,13 @@
 
 module Main where
 
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Reader
 import Data.Time
 import Options.Applicative as OA
 import Paths_jw
 import System.Directory
+import System.Environment
 import System.FilePath
 import System.Process
 
@@ -16,25 +19,44 @@ data Options = Options {
     optCommand :: Command
   } deriving (Eq, Show)
 
+data Environment = Environment {
+    envDay    :: Day
+  , envEditor :: Maybe String
+  } deriving (Eq, Show)
+
 data Command =
-    New
+    Entry (Maybe Day)
   deriving (Eq, Show)
 
-jw :: Options -> IO ()
+data Editor =
+    Vim
+  deriving (Eq, Show)
+
+jw :: Options -> ReaderT Environment IO ()
 jw Options {..} = case optCommand of
-  New -> newEntry
+  Entry mday -> case mday of
+    Nothing -> do
+      day <- asks envDay
+      lift $ entry day
+    Just day ->
+      lift $ entry day
 
-opts :: Parser Options
-opts = Options <$>
-    subparser newCommand
+options :: Parser Options
+options = Options <$> (helper <*> entryCommand)
   where
-    newParser  = pure New
-    newDesc    = progDesc "Write a new entry"
-    newCommand = command "new" (info newParser newDesc)
+    entryDesc    = progDesc "Start or continue an entry."
+    entryCommand = hsubparser $
+      command "entry" (info entryParser entryDesc)
+    entryParser  =
+          Entry
+      <$> optional (argument auto
+            (help "foo" <> metavar "DATE"))
 
-newEntry :: IO ()
-newEntry = do
-  file  <- liftA2 (</>) createWriteDir createFileName
+entry :: Day -> IO ()
+entry day = do
+  writeDir <- createWriteDir
+  let fname = show day <.> "md"
+      file  = writeDir </> fname
   wcvim <- getDataFileName "etc/wc.vim"
   csvim <- getDataFileName "etc/commands.vim"
   callProcess "vim"
@@ -53,12 +75,22 @@ createFileName = do
 createWriteDir :: IO FilePath
 createWriteDir = do
   home <- getHomeDirectory
-  let writeDir = home </> ".jw"
+  let writeDir = home </> ".jw" </> "entries"
   createDirectoryIfMissing True writeDir
   return writeDir
 
+getEnvironmentInfo :: IO Environment
+getEnvironmentInfo = do
+  zone <- getCurrentTimeZone
+  time <- getCurrentTime
+  let envDay = localDay $ utcToLocalTime zone time
+
+  envEditor <- lookupEnv "EDITOR"
+  return Environment {..}
+
 main :: IO ()
 main = do
-  options <- execParser (info opts fullDesc)
-  jw options
+  env  <- getEnvironmentInfo
+  opts <- execParser $ info options fullDesc
+  runReaderT (jw opts) env
 

@@ -27,4 +27,4 @@ executable jw
     , optparse-applicative
     , process
     , time
-
+    , transformers
