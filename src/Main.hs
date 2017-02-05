@@ -25,8 +25,17 @@ data Environment = Environment {
   } deriving (Eq, Show)
 
 data Command =
-    Entry (Maybe Day)
+    Entry EntryOptions
+  | View ViewOptions
   deriving (Eq, Show)
+
+data EntryOptions = EntryOptions {
+    entryOptDay :: Maybe Day
+  } deriving (Eq, Show)
+
+data ViewOptions = ViewOptions {
+    viewOptDay :: Maybe Day
+  } deriving (Eq, Show)
 
 data Editor =
     Vim
@@ -34,27 +43,42 @@ data Editor =
 
 jw :: Options -> ReaderT Environment IO ()
 jw Options {..} = case optCommand of
-  Entry mday -> case mday of
+  Entry EntryOptions {..} -> case entryOptDay of
     Nothing -> do
       day <- asks envDay
       lift $ entry day
     Just day ->
       lift $ entry day
 
+  View ViewOptions {..} -> case viewOptDay of
+    Nothing -> do
+      day <- asks envDay
+      lift $ view day
+    Just day ->
+      lift $ view day
+
 options :: Parser Options
-options = Options <$> (helper <*> entryCommand)
+options = Options <$> (helper <*> commandParser)
   where
+    commandParser = hsubparser $
+         command "entry" (info entryParser entryDesc)
+      <> command "view" (info viewParser viewDesc)
+
     entryDesc    = progDesc "Start or continue an entry."
-    entryCommand = hsubparser $
-      command "entry" (info entryParser entryDesc)
     entryParser  =
-          Entry
+          Entry . EntryOptions
+      <$> optional (argument auto
+            (help "foo" <> metavar "DATE"))
+
+    viewDesc   = progDesc "View an entry."
+    viewParser =
+          View . ViewOptions
       <$> optional (argument auto
             (help "foo" <> metavar "DATE"))
 
 entry :: Day -> IO ()
 entry day = do
-  writeDir <- createWriteDir
+  writeDir <- getWriteDir
   let fname = show day <.> "md"
       file  = writeDir </> fname
   wcvim <- getDataFileName "etc/wc.vim"
@@ -65,15 +89,15 @@ entry day = do
     , file, "+"
     ]
 
-createFileName :: IO FilePath
-createFileName = do
-  zone <- getCurrentTimeZone
-  time <- getCurrentTime
-  let day = localDay (utcToLocalTime zone time)
-  return $ show day <.> "md"
+view :: Day -> IO ()
+view day = do
+  writeDir <- getWriteDir
+  let fname = show day <.> "md"
+      file  = writeDir </> fname
+  callProcess "less" [file]
 
-createWriteDir :: IO FilePath
-createWriteDir = do
+getWriteDir :: IO FilePath
+getWriteDir = do
   home <- getHomeDirectory
   let writeDir = home </> ".jw" </> "entries"
   createDirectoryIfMissing True writeDir
