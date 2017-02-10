@@ -5,10 +5,13 @@
 
 module Main where
 
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Reader
 import Data.Time
 import Options.Applicative as OA
 import Paths_jw
 import System.Directory
+import System.Environment
 import System.FilePath
 import System.Process
 
@@ -16,25 +19,68 @@ data Options = Options {
     optCommand :: Command
   } deriving (Eq, Show)
 
+data Environment = Environment {
+    envDay    :: Day
+  , envEditor :: Maybe String
+  } deriving (Eq, Show)
+
 data Command =
-    New
+    Entry EntryOptions
+  | View ViewOptions
   deriving (Eq, Show)
 
-jw :: Options -> IO ()
+data EntryOptions = EntryOptions {
+    entryOptDay :: Maybe Day
+  } deriving (Eq, Show)
+
+data ViewOptions = ViewOptions {
+    viewOptDay :: Maybe Day
+  } deriving (Eq, Show)
+
+data Editor =
+    Vim
+  deriving (Eq, Show)
+
+jw :: Options -> ReaderT Environment IO ()
 jw Options {..} = case optCommand of
-  New -> newEntry
+  Entry EntryOptions {..} -> case entryOptDay of
+    Nothing -> do
+      day <- asks envDay
+      lift $ entry day
+    Just day ->
+      lift $ entry day
 
-opts :: Parser Options
-opts = Options <$>
-    subparser newCommand
+  View ViewOptions {..} -> case viewOptDay of
+    Nothing -> do
+      day <- asks envDay
+      lift $ view day
+    Just day ->
+      lift $ view day
+
+options :: Parser Options
+options = Options <$> (helper <*> commandParser)
   where
-    newParser  = pure New
-    newDesc    = progDesc "Write a new entry"
-    newCommand = command "new" (info newParser newDesc)
+    commandParser = hsubparser $
+         command "entry" (info entryParser entryDesc)
+      <> command "view" (info viewParser viewDesc)
 
-newEntry :: IO ()
-newEntry = do
-  file  <- liftA2 (</>) createWriteDir createFileName
+    entryDesc    = progDesc "Start or continue an entry."
+    entryParser  =
+          Entry . EntryOptions
+      <$> optional (argument auto
+            (help "foo" <> metavar "DATE"))
+
+    viewDesc   = progDesc "View an entry."
+    viewParser =
+          View . ViewOptions
+      <$> optional (argument auto
+            (help "foo" <> metavar "DATE"))
+
+entry :: Day -> IO ()
+entry day = do
+  writeDir <- getWriteDir
+  let fname = show day <.> "md"
+      file  = writeDir </> fname
   wcvim <- getDataFileName "etc/wc.vim"
   csvim <- getDataFileName "etc/commands.vim"
   callProcess "vim"
@@ -43,22 +89,32 @@ newEntry = do
     , file, "+"
     ]
 
-createFileName :: IO FilePath
-createFileName = do
-  zone <- getCurrentTimeZone
-  time <- getCurrentTime
-  let day = localDay (utcToLocalTime zone time)
-  return $ show day <.> "md"
+view :: Day -> IO ()
+view day = do
+  writeDir <- getWriteDir
+  let fname = show day <.> "md"
+      file  = writeDir </> fname
+  callProcess "less" [file]
 
-createWriteDir :: IO FilePath
-createWriteDir = do
+getWriteDir :: IO FilePath
+getWriteDir = do
   home <- getHomeDirectory
-  let writeDir = home </> ".jw"
+  let writeDir = home </> ".jw" </> "entries"
   createDirectoryIfMissing True writeDir
   return writeDir
 
+getEnvironmentInfo :: IO Environment
+getEnvironmentInfo = do
+  zone <- getCurrentTimeZone
+  time <- getCurrentTime
+  let envDay = localDay $ utcToLocalTime zone time
+
+  envEditor <- lookupEnv "EDITOR"
+  return Environment {..}
+
 main :: IO ()
 main = do
-  options <- execParser (info opts fullDesc)
-  jw options
+  env  <- getEnvironmentInfo
+  opts <- execParser $ info options fullDesc
+  runReaderT (jw opts) env
 

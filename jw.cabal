@@ -23,8 +23,9 @@ executable jw
   build-depends:
       base
     , directory
+    , errors
     , filepath
     , optparse-applicative
     , process
     , time
-
+    , transformers
