@@ -13,6 +13,7 @@ import Paths_jw
 import System.Directory
 import System.Environment
 import System.FilePath
+import System.IO
 import System.Process
 
 data Options = Options {
@@ -94,7 +95,10 @@ view day = do
   writeDir <- getWriteDir
   let fname = show day <.> "md"
       file  = writeDir </> fname
-  callProcess "less" [file]
+  exists <- doesFileExist file
+  if   exists
+  then callProcess "less" [file]
+  else hPutStrLn stderr $ "jw: no entry for " ++ show day
 
 getWriteDir :: IO FilePath
 getWriteDir = do
