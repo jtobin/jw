@@ -7,6 +7,7 @@ module Main where
 
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
+import Data.Monoid
 import Data.Time
 import Options.Applicative as OA
 import Paths_jw
